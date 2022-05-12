@@ -3,7 +3,7 @@ sidebar_label: Kafka
 title: TDengine Kafka Connector 使用教程
 ---
 
-TDengine Kafka Connector 本质上是 Kafka Connect 的两个插件: TDengine Source Connector 和 TDengine Sink Connector。借助 Confluent 平台，用户只需提供简单的配置文件，就可以消费 Kafka 的数据到 TDengine， 或将 TDengine 的数据推送到 Kafka。
+TDengine Kafka Connector 本质上是 Kafka Connect 的两个插件: TDengine Source Connector 和 TDengine Sink Connector。借助 Confluent 平台，用户只需提供简单的配置文件，就可以将 Kafka 中指定 topic 的数据同步到 TDengine， 或将 TDengine 中指定数据库的数据同步到 Kafka。
 
 ## 什么是 Kafka Connect？
 
@@ -92,6 +92,8 @@ rm taosdata-kafka-connect-tdengine-0.1.0.zip
 
 以上脚本先 clone 项目源码，然后用 maven 编译打包。打包完成后在 `target/components/packages/` 目录生成了插件的 zip 包。然后把这个 zip 包解压到安装插件的路径即可。安装插件的路径在配置文件 `$CONFLUENT_HOME/etc/kafka/connect-standalone.properties` 中配置，以上命令使用了默认的插件路径 `$CONFLUENT_HOME/share/confluent-hub-components/`。
 
+执行完上面的操作，TDengine Sink Connector 和 TDengine Source Connector 都已安装。
+
 ### 用 confluent-hub 安装
 
 [Confluent Hub](https://www.confluent.io/hub) 提供下载 Kafka Connect 插件的服务。可以用命令工具 `confluent-hub` 安装已发布到 Confluent Hub 的插件。
@@ -104,7 +106,7 @@ confluent local services start
 ```
 
 :::note
-一定要先安装插件再启动 Confluent, 否则会出现找不到类的错误。
+一定要先安装插件再启动 Confluent, 否则会出现找不到类的错误。在启动过程中可以监控 Kafka Connect 的日志（默认路径: /tmp/confluent.xxxx/connect/logs/connect.log），日志中会输出发现的插件，可以用这个方法验证插件是否安装成功。
 :::
 
 :::tip
@@ -127,22 +129,26 @@ ksqlDB Server is [UP]
 Starting Control Center
 Control Center is [UP]
 ```
+
 可执行 `rm -rf /tmp/confluent.106668` 清空数据。
 :::
 
-## TDengine Sink Connector
+## Sink Connector 的使用
 
-TDengine Sink Connector 使用 TDengine 无模式写入接口写入数据，目前支持三种无模式写入协议：[InfluxDB 行协议](/develop/insert-data/influxdb-line)、 [OpenTSDB 行协议](/develop/insert-data/opentsdb-telnet) 和 [OpenTSDB JSON 格式协议](/develop/insert-data/opentsdb-json)。
+Sink Connector 的作用是同步某些 topic 的数据到 TDengine。topic 的名字对应 TDengine 中超级表的名字。用户无需提前创建数据库和超级表。目标数据库的名字可以手动指定（见配置参数 connection.database）， 也可以按一定规则生成(见配置参数 connection.database.prefix)。
 
-### 使用示例
+TDengine Sink Connector 内部使用 TDengine [无模式写入接口](/reference/connector/cpp#无模式写入-api)写数据到 TDengine，目前支持三种格式的数据：[InfluxDB 行协议格式](/develop/insert-data/influxdb-line)、 [OpenTSDB 行协议格式](/develop/insert-data/opentsdb-telnet) 和 [OpenTSDB JSON 协议格式](/develop/insert-data/opentsdb-json)。
 
-#### 添加配置文件
+下面的示例将主题 meters 的数据，同步到目标数据库 power。数据格式为 InfluxDB Line 协议格式。
+
+### 添加配置文件
 
 ```
 mkdir ~/test
 cd ~/test
-vim sink-demo.properties
+vi sink-demo.properties
 ```
+
 sink-demo.properties 内容如下：
 
 ```ini title="sink-demo.properties"
@@ -159,11 +165,19 @@ key.converter=org.apache.kafka.connect.storage.StringConverter
 value.converter=org.apache.kafka.connect.storage.StringConverter
 ```
 
-#### 部署 Connector
+关键配置说明：
+
+1. `topics=meters` 和 `connection.database=power`, 表示订阅主题 meters 的数据，并写入数据库 power。
+2. `db.schemaless=line`, 表示使用 InfluxDB Line 协议格式的数据。
+
+### 加载 Connector 插件
+
 ```
 confluent local services connect connector load TDengineSinkConnector --config ./sink-demo.properties
 ```
+
 如果以上命令执行成功，则会有如下输出：
+
 ```json
 {
   "name": "TDengineSinkConnector",
@@ -185,9 +199,10 @@ confluent local services connect connector load TDengineSinkConnector --config .
 }
 ```
 
-#### 写入测试数据
+### 写入测试数据
 
-使用 kafka-console-producer 写入测试数据。
+使用 kafka-console-producer 向主题 meters 添加测试数据。
+
 ```
 [root@host user]# kafka-console-producer --broker-list localhost:9092 --topic meters
 >meters,location=Beijing.Haidian,groupid=2 current=11.8,voltage=221,phase=0.28 1648432611249000000
@@ -195,11 +210,14 @@ confluent local services connect connector load TDengineSinkConnector --config .
 >meters,location=Beijing.Haidian,groupid=3 current=10.8,voltage=223,phase=0.29 1648432611249000000
 >meters,location=Beijing.Haidian,groupid=3 current=11.3,voltage=221,phase=0.35 1648432611250000000
 ```
+
 :::note
-如果目标数据库 power 不存在，TDengine Sink Connector 会自动创建数据库。自动创建数据库使用的时间精度位纳秒，如果写入的数据的时间精度不是纳秒，将会抛异常。
+如果目标数据库 power 不存在，TDengine Sink Connector 会自动创建数据库。自动创建数据库使用的时间精度为纳秒，这就要求写入数据的时间戳精度也是纳秒。如果写入数据的时间戳精度不是纳秒，将会抛异常。
 :::
 
-#### 查看写入的数据
+### 验证同步是否成功
+
+使用 TDengine CLI 验证同步是否成功。
 
 ```
 taos> use power;
@@ -215,7 +233,42 @@ taos> select * from meters;
 Query OK, 4 row(s) in set (0.004208s)
 ```
 
-### 配置说明
+如果看到以上数据，则同步成功。如果没有请检查 Kafka Connect 的日志。配置参数的详细说明见[配置参考](#配置参考)。
+
+
+## Source Connector 的使用
+
+### 添加配置文件
+
+```
+vi source-demo.properties
+```
+
+输入以下内容：
+
+```ini tittle="source-demo.properties"
+name=tdengine-source
+connector.class=com.taosdata.kafka.connect.source.TDengineSourceConnector
+tasks.max=1
+connection.url=jdbc:TAOS://127.0.0.1:6030
+connection.username=root
+connection.password=taosdata
+connection.database=test
+connection.attempts=3
+connection.backoff.ms=5000
+topic.prefix=tdengine-
+poll.interval.ms=1000
+fetch.max.rows=100
+out.format=json
+key.converter=org.apache.kafka.connect.storage.StringConverter
+value.converter=org.apache.kafka.connect.storage.StringConverter
+```
+
+## 配置参考
+
+### 通用配置
+
+以下配置项对 TDengine Sink Connector 和 TDengine Source Connector 均适用。
 
 1. `connector.class` : connector 的完整类名， 如: com.taosdata.kafka.connect.sink.TDengineSinkConnector
 2. `tasks.max` : 最大任务数, 默认为 1
@@ -226,18 +279,18 @@ Query OK, 4 row(s) in set (0.004208s)
 7. `connection.database` ： 目标数据库名。如果指定的数据库不存在会则自动创建。自动建库使用的时间精度为纳秒。默认值为 null。为 null 时目标数据库命名规则参考 `connection.database.prefix` 参数的说明
 8. `connection.attempts` ：最大尝试连接次数。默认为 3。
 9. `connection.backoff.ms` ： Backoff time in milliseconds between connection attempts.
-10. `connection.database.prefix` ： when connection.database is not specify, a string for the destination database name. which may contain '${topic}' as a placeholder for the originating topic name for example, kafka_${topic} for the topic 'orders' will map to the database name 'kafka_orders'. the default value is null, this means the topic will be mapped to the new database which will have same name as the topic
-11. `batch.size` : Specifies how many records to attempt to batch together for insertion into the destination table
-12. `max.retries`: The maximum number of times retry on errors before falling the task.
-13. `retry.backoff.ms` : The time in milliseconds to wait following an error before a retry attempt is made.
-14. `db.schemaless` : the format to write data to tdengine, one of line,telnet,json
 
+### Sink Connector 特有的配置
 
-## TDengine Source Connector
+1. `connection.database.prefix` ： when connection.database is not specify, a string for the destination database name. which may contain '${topic}' as a placeholder for the originating topic name for example, kafka_${topic} for the topic 'orders' will map to the database name 'kafka_orders'. the default value is null, this means the topic will be mapped to the new database which will have same name as the topic
+2. `batch.size` : Specifies how many records to attempt to batch together for insertion into the destination table
+3. `max.retries`: The maximum number of times retry on errors before falling the task.
+4. `retry.backoff.ms` : The time in milliseconds to wait following an error before a retry attempt is made.
+5. `db.schemaless` : the format to write data to tdengine, one of line,telnet,json
 
-### 使用示例
+### Source Connector 特有的配置
 
-### 配置说明
+1. `topic.prefix`： topic 前缀，完整的 topic 名称为： `topic.prefix` + `connection.database`
 
 ## 参考
 
