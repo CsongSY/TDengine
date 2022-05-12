@@ -239,6 +239,8 @@ Query OK, 4 row(s) in set (0.004208s)
 
 Source Connector 的作用是将 TDengine 某个数据库某一时刻之后的数据全部推送到 Kafka。Source Connector 的实现原理是，先分批拉取历史数据，再用定时查询的策略同步增量数据。同时会监控表的变化，可以自动同步新增的表。如果重启 Kafka Connect, 会从上次中断的位置继续同步。
 
+Source Connector 会将 TDengine 数据表中的数据转换成 [OpenTSDB 行协议格式](/develop/insert-data/opentsdb-telnet) 或 [OpenTSDB JSON 协议格式](/develop/insert-data/opentsdb-json)， 写入 Kafka 的对应主题。表名将作为 metric 字段的值。由于这两种数据格式的限制（只能包含一个 value 字段），源数据库也必须使用单列模型， 且数据字段名必须为 value。
+
 下面的示例程序同步数据库 test 中的数据到主题 tdengine-source-test。
 
 ### 添加配置文件
@@ -315,14 +317,10 @@ Query OK, 1 of 1 row(s) in database (0.000772s)
 {"metric":"bjchaoyang","value":13.7,"timestamp":1652351984873,"tags":{"location":"QmVpamluZy5DaGFveWFuZw=="}}
 {"metric":"bjchaoyang","value":13.8,"timestamp":1652351988990,"tags":{"location":"QmVpamluZy5DaGFveWFuZw=="}}
 ```
+
 :::note
 此处写入 TDengine 的 tag 值和从 topic 中取出的 tag 值不一致。可能是个 bug。
 :::
-
-### 使用限制
-
-1. TDengine 表名已经支持带有特殊字符，如点号 “.”。 但是 Source Connector 还不支持。
-2. 源数据库必须使用单列模型。不支持有多列数据的表。
 
 ## 配置参考
 
