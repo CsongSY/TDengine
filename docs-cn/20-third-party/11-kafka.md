@@ -249,7 +249,7 @@ vi source-demo.properties
 
 输入以下内容：
 
-```ini tittle="source-demo.properties"
+```ini title="source-demo.properties"
 name=tdengine-source-connector-demo
 connector.class=com.taosdata.kafka.connect.source.TDengineSourceConnector
 tasks.max=1
@@ -269,7 +269,7 @@ value.converter=org.apache.kafka.connect.storage.StringConverter
 
 ### 准备测试数据
 
-进入 TDengine CLI, 依次执行以下命名：
+进入 TDengine CLI, 依次执行以下命令：
 
 ```
 drop database if exists test;
@@ -315,6 +315,9 @@ Query OK, 1 of 1 row(s) in database (0.000772s)
 {"metric":"bjchaoyang","value":13.7,"timestamp":1652351984873,"tags":{"location":"QmVpamluZy5DaGFveWFuZw=="}}
 {"metric":"bjchaoyang","value":13.8,"timestamp":1652351988990,"tags":{"location":"QmVpamluZy5DaGFveWFuZw=="}}
 ```
+:::note
+此处写入 TDengine 的 tag 值和从 topic 中取出的 tag 值不一致。可能是个 bug。
+:::
 
 ### 使用限制
 
@@ -341,7 +344,7 @@ Query OK, 1 of 1 row(s) in database (0.000772s)
 
 1. `connection.database`： 目标数据库名。如果指定的数据库不存在会则自动创建。自动建库使用的时间精度为纳秒。默认值为 null。为 null 时目标数据库命名规则参考 `connection.database.prefix` 参数的说明
 2. `connection.database.prefix`： 当 connection.database 为 null 时, 目标数据库的前缀。可以包含占位符 '${topic}'。 比如 kafka_${topic}, 对于主题 'orders' 将写入数据库 'kafka_orders'。 默认 null。当为 null 时，目标数据库的名字和主题的名字是一致的。
-3. `batch.size`: 批量写入时每批记录数。暂不支持批量写入。
+3. `batch.size`: 分批写入每批记录数。当 Sink Connector 一次接收到的数据大于这个值时将分批写入。
 4. `max.retries`: 发生错误时的最大重试次数。默认为 1。
 5. `retry.backoff.ms`: 发送错误时重试的时间间隔。单位毫秒，默认 3000。
 6. `db.schemaless`: 数据格式，必须指定为： line、json、telnet 中的一个。分别代表 InfluxDB 行协议格式、 OpenTSDB JSON 格式、 OpenTSDB Telnet 行协议格式。
